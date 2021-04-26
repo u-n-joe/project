@@ -34,7 +34,7 @@ ANCHORS = [
     [(0.02, 0.03), (0.04, 0.07), (0.08, 0.06)],
 ]  # Note these have been rescaled to be between [0, 1]
 
-scale = 1.2  # 1.2, 1.3 실험 해보기
+scale = 1.3  # 1.2, 1.3 실험 해보기
 train_transforms = A.Compose(
     [
         A.LongestMaxSize(max_size=int(IMAGE_SIZE * scale)),   # 초기 이미지의 비율을 유지하면서 한쪽(w,h)이 max_size와 같도록 이미지 크기 조정
@@ -61,7 +61,7 @@ train_transforms = A.Compose(
         # A.CLAHE(p=0.1),  # 이미지가 뭔가 진해지고 선명해짐 / Doc: Apply Contrast Limited Adaptive Histogram Equalization
         # A.Posterize(p=0.1),
         # A.ToGray(p=0.1),
-        # A.ChannelShuffle(p=0.05),
+
 
         A.Normalize(mean=[0.6340, 0.5614, 0.4288], std=[0.2803, 0.2786, 0.3126], max_pixel_value=255,),
         ToTensorV2(),
