@@ -34,7 +34,7 @@ ANCHORS = [
     [(0.02, 0.03), (0.04, 0.07), (0.08, 0.06)],
 ]  # Note these have been rescaled to be between [0, 1]
 
-scale = 1.1
+scale = 1.2  # 1.2, 1.3 실험 해보기
 train_transforms = A.Compose(
     [
         A.LongestMaxSize(max_size=int(IMAGE_SIZE * scale)),   # 초기 이미지의 비율을 유지하면서 한쪽(w,h)이 max_size와 같도록 이미지 크기 조정
@@ -44,7 +44,7 @@ train_transforms = A.Compose(
             border_mode=cv2.BORDER_CONSTANT,
         ),
         A.RandomCrop(width=IMAGE_SIZE, height=IMAGE_SIZE),
-        #A.RandomBrightnessContrast(p=0.2),  # new
+        # A.RandomBrightnessContrast(p=0.2),  # new
         # A.ColorJitter(brightness=0.6, contrast=0.6, saturation=0.6, hue=0.6, p=0.4),
         A.OneOf(
             [
