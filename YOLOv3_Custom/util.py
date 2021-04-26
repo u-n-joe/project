@@ -13,6 +13,38 @@ from tqdm import tqdm
 
 import pdb
 
+def mixup_data(x, y):
+    y_a = []
+    y_b = []
+    lam = np.random.rand()  # 0~1
+    batch_size = x.shape[0]
+    index = torch.randperm(batch_size).to(config.DEVICE)  # randperm: batch_size 개수만큼 unique random index를 가진 1차원 tensor
+    mixed_x = lam * x + (1-lam) * x[index]
+    for i in range(3):
+        # pdb.set_trace()
+        y_a.append(y[i])
+        y_b.append(y[i][index])
+    return mixed_x, y_a, y_b, lam
+
+
+def mixup_criterion(criterion, pred, y_a, y_b, lam, scaled_anchor):
+    return lam * criterion(pred, y_a, scaled_anchor) + (1-lam) * criterion(pred, y_b, scaled_anchor)
+
+
+def get_mean_and_std(dataset):
+    '''Compute the mean and std value of dataset.'''
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True)
+    mean = torch.zeros(3)
+    std = torch.zeros(3)
+    print('==> Computing mean and std..')
+    for inputs, _ in dataloader:
+        # pdb.set_trace()
+        for i in range(3):
+            mean[i] += (inputs[:,:,:,i]/255.0).mean()
+            std[i] += (inputs[:,:,:,i]/255.0).std()
+    mean.div_(len(dataset))
+    std.div_(len(dataset))
+    return mean, std
 
 def iou_width_height(boxes1, boxes2):
     """
@@ -140,7 +172,7 @@ def my_non_max_suppression(bboxes, iou_threshold, threshold, score_threshold=0.0
 
 
 def mean_average_precision(
-        pred_boxes, true_boxes, iou_threshold=0.5, box_format='midpoint', num_classes=4
+        pred_boxes, true_boxes, iou_threshold=0.5, box_format='midpoint', num_classes=11
 ):
     """
     This function calculates mean average precision (mAP)
@@ -230,7 +262,9 @@ def mean_average_precision(
         precisions = TP_cumsum / (TP_cumsum + FP_cumsum + epsilon)
         recalls = torch.cat((torch.tensor([0]), recalls))  # recall은 0부터 시작
         precisions = torch.cat((torch.tensor([1]), precisions))
-        average_precisions.append(torch.trapz(precisions, recalls))  # trapz : y축, x축 을 주면 아래 면적 계산
+        ap = torch.trapz(precisions, recalls)
+        average_precisions.append(ap)  # trapz : y축, x축 을 주면 아래 면적 계산
+        print(f"{config.CLASSES[c]} AP: {ap:.2f}")
 
     return sum(average_precisions) / len(average_precisions)
 
@@ -408,7 +442,7 @@ def get_evaluation_bboxes(
 
 
 
-def check_class_accuracy(model, loss_fn, loader, scaled_anchors, threshold):
+def check_class_accuracy(model, loss_fn, loader, scaled_anchors, writer, step, threshold):
     model.eval()
     tot_class_preds, correct_class = 0, 0
     tot_noobj, correct_noobj = 0, 0
@@ -438,6 +472,8 @@ def check_class_accuracy(model, loss_fn, loader, scaled_anchors, threshold):
 
         mean_loss = sum(losses) / len(losses)
         loop.set_postfix(validation_loss=mean_loss)
+        writer.add_scalar("validation loss", mean_loss, global_step=step)
+        step += 1
 
 
         for i in range(3):
@@ -460,6 +496,7 @@ def check_class_accuracy(model, loss_fn, loader, scaled_anchors, threshold):
     print(f"No obj accuracy is: {(correct_noobj/(tot_noobj+1e-16))*100:2f}%")
     print(f"Obj accuracy is: {(correct_obj/(tot_obj+1e-16))*100:2f}%")
     model.train()
+    return step
 
 
 

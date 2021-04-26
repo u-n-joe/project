@@ -1,13 +1,34 @@
 import numpy as np
+import torch
+from dataset import YOLODataset
+import config
+import pdb
 
-import os
+def get_mean_and_std(dataset):
+    '''Compute the mean and std value of dataset.'''
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True)
+    mean = torch.zeros(3)
+    std = torch.zeros(3)
+    print('==> Computing mean and std..')
+    for inputs, _ in dataloader:
+        # pdb.set_trace()
+        for i in range(3):
+            mean[i] += (inputs[:,:,:,i]/255.0).mean()
+            std[i] += (inputs[:,:,:,i]/255.0).std()
+    mean.div_(len(dataset))
+    std.div_(len(dataset))
+    return mean, std
 
-path = 'E:\\Computer Vision\\data\\project\\fruit_yolov3\\valid\\labels'
-id = os.listdir(path)
+anchors = config.ANCHORS
+dataset = YOLODataset(
+        root=config.TRAIN_DIR,
+        anchors=anchors,
+        transform=None,
+        mosaic=True
+    )
 
-for i in id:
-    with open(os.path.join(path, i), 'r') as f:
-        val = f.readline()
-        # print(val)
-        if val == '':
-            print(i)
+
+mean, std = get_mean_and_std(dataset)
+
+print(mean)
+print(std)

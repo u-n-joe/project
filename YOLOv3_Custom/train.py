@@ -3,7 +3,8 @@ import config
 import torch
 import torch.optim as optim
 import yaml
-
+import matplotlib.pyplot as plt
+import numpy as np
 from model import YOLOv3
 from tqdm import tqdm
 from util import (
@@ -14,25 +15,49 @@ from util import (
     load_checkpoint,
     check_class_accuracy,
     get_loaders,
-    seed_everything
+    seed_everything,
+    mixup_data,
+    mixup_criterion
 )
 from loss import YOLOLoss
+from torch.utils.tensorboard import SummaryWriter
 import pdb
 
 
 
-def train_fn(train_loader, model, optimizer, loss_fn, scaler, scaled_anchors, scheduler):
+def train_fn(train_loader, model, optimizer, loss_fn, scaler, scaled_anchors, scheduler, writer, step):
     model.train()
     loop = tqdm(train_loader, leave=True)
     losses = []
     for batch_idx, (x, y) in enumerate(loop):
-
         x = x.to(config.DEVICE)
         y0, y1, y2 = (
             y[0].to(config.DEVICE),
             y[1].to(config.DEVICE),
             y[2].to(config.DEVICE)
         )
+
+        # x, y_a, y_b, lam = mixup_data(x, y)
+
+        # y_a0, y_a1, y_a2 = (
+        #     y_a[0].to(config.DEVICE),
+        #     y_a[1].to(config.DEVICE),
+        #     y_a[2].to(config.DEVICE)
+        # )
+        # y_b0, y_b1, y_b2 = (
+        #     y_b[0].to(config.DEVICE),
+        #     y_b[1].to(config.DEVICE),
+        #     y_b[2].to(config.DEVICE)
+        # )
+        # ''' img show'''
+        # inp = x[1].cpu().numpy().transpose((1, 2, 0))
+        # mean = np.array([0.6340, 0.5614, 0.4288])
+        # std = np.array([0.2803, 0.2786, 0.3126])
+        # inp = std * inp + mean
+        # inp = np.clip(inp, 0, 1)
+        # plt.imshow(inp)
+        # plt.show()
+        # pdb.set_trace()
 
         with torch.cuda.amp.autocast():
             out = model(x)  # [(2, 3, 13, 13, 16), (2, 3, 26, 26, 16), (2, 3, 52, 52, 16)]
@@ -41,6 +66,12 @@ def train_fn(train_loader, model, optimizer, loss_fn, scaler, scaled_anchors, sc
                 + loss_fn(out[1], y1, scaled_anchors[1])
                 + loss_fn(out[2], y2, scaled_anchors[2])
             )
+            # loss = (
+            #     mixup_criterion(loss_fn, out[0], y_a0, y_b0, lam, scaled_anchors[0])  # 13x13
+            #     + mixup_criterion(loss_fn, out[1], y_a1, y_b1, lam, scaled_anchors[1])  # 26x26
+            #     + mixup_criterion(loss_fn, out[2], y_a2, y_b2, lam, scaled_anchors[2])  # 52x52
+            # )
+
         losses.append(loss.item())
         optimizer.zero_grad()
         scaler.scale(loss).backward()
@@ -51,12 +82,21 @@ def train_fn(train_loader, model, optimizer, loss_fn, scaler, scaled_anchors, sc
         mean_loss = sum(losses) / len(losses)
         loop.set_postfix(loss=mean_loss)
 
-    scheduler.step(mean_loss)
+        writer.add_scalar("Training loss", mean_loss, global_step=step)
+        step += 1
 
+    scheduler.step(mean_loss)
+    return step
 
 
 def main():
-    model = YOLOv3(num_classes=config.NUM_CLASSES, pretrained_weight=opt.pretrained_weight).to(config.DEVICE)
+    model = YOLOv3(num_classes=config.NUM_CLASSES, backbone=opt.backbone, pretrained_weight=opt.pretrained_weight).to(config.DEVICE)
+    # # backbone weight freeze
+    # for name, param in model.named_parameters():
+    #     if name in ['layers.0.conv.weight']:
+    #         break
+    #     param.requires_grad = False
+
 
     optimizer = optim.Adam(
         model.parameters(), lr=config.LEARNING_RATE, weight_decay=config.WEIGHT_DECAY
@@ -66,12 +106,15 @@ def main():
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, factor=0.1, patience=5, verbose=True
     )
+    writer = SummaryWriter(
+        f"runs/fruit"
+    )
 
-    train_loader, test_loader = get_loaders()  # test loader 추가해야함
+    train_loader, test_loader = get_loaders()
 
     if config.LOAD_MODEL:
         load_checkpoint(
-            'checkpoint.pth.tar', model, optimizer
+            'checkpoint.pth2.tar', model, optimizer
         )
 
     scaled_anchors = (
@@ -79,9 +122,11 @@ def main():
     ).to(config.DEVICE)
 
     best_map = 0
+    train_step = 0
+    val_step = 0
     for epoch in range(config.NUM_EPOCHS):
         print(f"Epoch:{epoch+1}")
-        train_fn(train_loader, model, optimizer, loss_fn, scaler, scaled_anchors, scheduler)
+        train_step = train_fn(train_loader, model, optimizer, loss_fn, scaler, scaled_anchors, scheduler, writer, train_step)
 
 
         # print(f"Currently epoch {epoch}")
@@ -92,7 +137,7 @@ def main():
 
         if (epoch+1) % 5 == 0:
             print("On Test loader:")
-            check_class_accuracy(model, loss_fn, test_loader, scaled_anchors, threshold=config.CONF_THRESHOLD)
+            val_step = check_class_accuracy(model, loss_fn, test_loader, scaled_anchors, writer, val_step, threshold=config.CONF_THRESHOLD)
 
             pred_boxes, true_boxes = get_evaluation_bboxes(
                 test_loader,
@@ -112,20 +157,22 @@ def main():
 
             if config.SAVE_MODEL:
                 if best_map < mapval.item():
-                    save_checkpoint(model, optimizer, filename=f"checkpoint.pth.tar")
+                    save_checkpoint(model, optimizer, filename=f"checkpoint.pth2.tar")
                     best_map = mapval.item()
 
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     # parser.add_argument('--workers', type=int, default=8, help='maximum number of dataloader workers')
-    parser.add_argument('--batch-size', type=int, default=2, help='total batch size for all GPUs')
+    parser.add_argument('--batch-size', type=int, default=3, help='total batch size for all GPUs')
     # parser.add_argument('--img-size', type=int, default=416, help='[train, test] image sizes')
     # parser.add_argument('--num-classes', type=int, default=11, help='number of classes')
     parser.add_argument('--lr', type=float, default=0.001, help='initial learning rate')
     # parser.add_argument('--weight-decay', type=float, default=1e-4, help='l2 normalization')
     parser.add_argument('--epochs', type=int, default=200, help='number of epochs')
-    parser.add_argument('--pretrained-weight', type=str, default='', help='pretrained weights file name')
+    parser.add_argument('--pretrained-weight', type=str, default='darknet53_pretrained.pth.tar', help='pretrained weights file name')
+    parser.add_argument('--backbone', type=str, default='darknet53', help='backbone network')
+
     # parser.add_argument('--conf-threshold', type=float, default=0.6, help='')
     # parser.add_argument('--map-iou-threshold', type=float, default=0.5, help='')
     # parser.add_argument('--nms-iou-threshold', type=float, default=0.45, help=''

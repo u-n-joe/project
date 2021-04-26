@@ -57,16 +57,17 @@ class YOLOLoss(nn.Module):
         #   FOR BOX COORDINATES    #
         # ======================== #
 
-        predictions[..., 1:3] = self.sigmoid(predictions[..., 1:3])  # x,y coordinates  Cx, Cy가 없는 이유는 위와 동일
+        predictions[..., 1:3] = self.sigmoid(predictions[..., 1:3])  # x,y coordinates
         target[..., 3:5] = torch.log(  # tw = log(Bw/Pw)
             (1e-16 + target[..., 3:5] / anchors)  # 분자가 0이 됨을 막기 위함
-        )  # width, height coordinates  # target을 bw,bh에서 tw, th상태로 만들어줌
+        )  # prediction의 tw,th를 bw,bh로 할 수 있지만 target을 역으로 바꿔주면 better gradient flow를 갖는다고 한다.
         box_loss = self.mse(predictions[..., 1:5][obj], target[..., 1:5][obj])
 
 
         # ================== #
         #   FOR CLASS LOSS   #
         # ================== #
+        # 우리의 라벨은 과일과 수박이 있는 multi label clf 가 아니라 수박,사과 같은 multi class clf이기 때문에 논문과는 다르게 crossentropy 사용
         class_loss = self.entropy(
             (predictions[..., 5:][obj]), (target[..., 5][obj].long())
         )
@@ -85,13 +86,5 @@ class YOLOLoss(nn.Module):
             + self.lambda_noobj * no_object_loss
             + self.lambda_class * class_loss
         )
-
-
-
-
-
-
-
-
 
 
