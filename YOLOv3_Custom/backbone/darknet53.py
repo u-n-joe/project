@@ -57,6 +57,8 @@ class Darknet53(nn.Module):
         # self.global_avg_pool = nn.AdaptiveMaxPool2d(1)
         # self.fc = nn.Linear(1024, num_classes)
 
+        self._initialize_weights()
+
         if pretrained_weight:
             print('Loading Pretrained model!')
             self.load_pretrained_layers(pretrained_weight)
@@ -96,10 +98,23 @@ class Darknet53(nn.Module):
         pretrained_state_dict = check_point['state_dict']
         pretrained_param_names = list(check_point['state_dict'].keys())
 
-        for i, param in enumerate(param_names):  # fc layer 전까지 weight 적용
+        for i, param in enumerate(param_names):  # fc layer 전까지 weight 적용  108
             state_dict[param] = pretrained_state_dict[pretrained_param_names[i]]
 
         self.load_state_dict(state_dict)
+
+
+    def _initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_uniform_(m.weight)
+
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
 
 
 def darknet53_model(device, pretrained_weight):

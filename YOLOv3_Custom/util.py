@@ -324,6 +324,51 @@ def intersection_over_union(boxes_preds, boxes_labels, box_format="midpoint"):
     return intersection / (box1_area + box2_area - intersection + 1e-6)
 
 
+# bouning box regression에 사용될 giou loss 함수
+def generalized_intersection_over_union(boxes_preds, boxes_labels, box_format="midpoint"):
+    '''
+    Args:
+        boxes_preds: tensor (N, 3, 13, 13, 4)
+        boxes_labels: tensor (N, 3, 13, 13, 4)
+        box_format: midpoint
+    Returns: GIoU loss
+    '''
+    boxes1 = torch.clone(boxes_preds)
+    boxes2 = torch.clone(boxes_labels)
+
+    if box_format == 'midpoint':
+        boxes1[..., :2] = boxes_preds[..., :2] - (boxes_preds[..., 2:] / 2)
+        boxes1[..., 2:] = boxes_preds[..., :2] + (boxes_preds[..., 2:] / 2)
+        boxes2[..., :2] = boxes_labels[..., :2] - (boxes_labels[..., 2:] / 2)
+        boxes2[..., 2:] = boxes_labels[..., :2] + (boxes_labels[..., 2:] / 2)
+
+    area1 = (boxes1[..., 2] - boxes1[..., 0]) * (boxes1[..., 3] - boxes1[..., 1])
+    area2 = (boxes2[..., 2] - boxes2[..., 0]) * (boxes2[..., 3] - boxes2[..., 1])
+
+    inter_min_xy = torch.max(boxes1[..., :2], boxes2[..., :2])
+    inter_max_xy = torch.min(boxes1[..., 2:], boxes2[..., 2:])
+
+    outer_min_xy = torch.min(boxes1[..., :2], boxes2[..., :2])
+    outer_max_xy = torch.max(boxes1[..., 2:], boxes2[..., 2:])
+
+    inter = torch.clamp((inter_max_xy - inter_min_xy), 0)  # -값 0으로 대체 -> 두 박스가 아예 겹쳐져 있지 않은 상황
+    inter_area = inter[..., 0] * inter[..., 1]
+    outer = torch.clamp((outer_max_xy - outer_min_xy), 0)
+    outer_area = outer[..., 0] * outer[..., 1]
+
+    union = area1 + area2 - inter_area
+    giou = (inter_area/union) - (outer_area - union) / outer_area  # GIoU = IoU - (outer - union / outer)  빈 공간이 많을수록 giou는 작아짐
+    giou = torch.clamp(giou, -1.0, 1.0)  # -1~1 사이의 값을 가짐
+
+    loss = 1. - giou
+    return loss.mean()
+
+
+
+
+
+
+
 
 def plot_image(image, boxes):
     cmap = plt.get_cmap('tab20b')
@@ -442,7 +487,7 @@ def get_evaluation_bboxes(
 
 
 
-def check_class_accuracy(model, loss_fn, loader, scaled_anchors, writer, step, threshold):
+def check_class_accuracy(model, loss_fn, loader, scaled_anchors, threshold):
     model.eval()
     tot_class_preds, correct_class = 0, 0
     tot_noobj, correct_noobj = 0, 0
@@ -472,8 +517,7 @@ def check_class_accuracy(model, loss_fn, loader, scaled_anchors, writer, step, t
 
         mean_loss = sum(losses) / len(losses)
         loop.set_postfix(validation_loss=mean_loss)
-        writer.add_scalar("validation loss", mean_loss, global_step=step)
-        step += 1
+
 
 
         for i in range(3):
@@ -496,7 +540,7 @@ def check_class_accuracy(model, loss_fn, loader, scaled_anchors, writer, step, t
     print(f"No obj accuracy is: {(correct_noobj/(tot_noobj+1e-16))*100:2f}%")
     print(f"Obj accuracy is: {(correct_obj/(tot_obj+1e-16))*100:2f}%")
     model.train()
-    return step
+    return mean_loss
 
 
 

@@ -25,7 +25,7 @@ import pdb
 
 
 
-def train_fn(train_loader, model, optimizer, loss_fn, scaler, scaled_anchors, scheduler, writer, step):
+def train_fn(train_loader, model, optimizer, loss_fn, scaler, scaled_anchors):
     model.train()
     loop = tqdm(train_loader, leave=True)
     losses = []
@@ -49,15 +49,15 @@ def train_fn(train_loader, model, optimizer, loss_fn, scaler, scaled_anchors, sc
         #     y_b[1].to(config.DEVICE),
         #     y_b[2].to(config.DEVICE)
         # )
-        # ''' img show'''
-        # inp = x[1].cpu().numpy().transpose((1, 2, 0))
-        # mean = np.array([0.6340, 0.5614, 0.4288])
-        # std = np.array([0.2803, 0.2786, 0.3126])
-        # inp = std * inp + mean
-        # inp = np.clip(inp, 0, 1)
-        # plt.imshow(inp)
-        # plt.show()
-        # pdb.set_trace()
+        ''' img show'''
+        inp = x[1].cpu().numpy().transpose((1, 2, 0))
+        mean = np.array([0.6340, 0.5614, 0.4288])
+        std = np.array([0.2803, 0.2786, 0.3126])
+        inp = std * inp + mean
+        inp = np.clip(inp, 0, 1)
+        plt.imshow(inp)
+        plt.show()
+        pdb.set_trace()
 
         with torch.cuda.amp.autocast():
             out = model(x)  # [(2, 3, 13, 13, 16), (2, 3, 26, 26, 16), (2, 3, 52, 52, 16)]
@@ -82,11 +82,7 @@ def train_fn(train_loader, model, optimizer, loss_fn, scaler, scaled_anchors, sc
         mean_loss = sum(losses) / len(losses)
         loop.set_postfix(loss=mean_loss)
 
-        writer.add_scalar("Training loss", mean_loss, global_step=step)
-        step += 1
-
-    scheduler.step(mean_loss)
-    return step
+    return mean_loss
 
 
 def main():
@@ -113,8 +109,9 @@ def main():
     train_loader, test_loader = get_loaders()
 
     if config.LOAD_MODEL:
+        print("Model Loading!")
         load_checkpoint(
-            'checkpoint.pth2.tar', model, optimizer
+            'checkpoint.pth.tar', model, optimizer
         )
 
     scaled_anchors = (
@@ -126,18 +123,18 @@ def main():
     val_step = 0
     for epoch in range(config.NUM_EPOCHS):
         print(f"Epoch:{epoch+1}")
-        train_step = train_fn(train_loader, model, optimizer, loss_fn, scaler, scaled_anchors, scheduler, writer, train_step)
+        train_mean_loss = train_fn(train_loader, model, optimizer, loss_fn, scaler, scaled_anchors)
+        scheduler.step(train_mean_loss)
+        writer.add_scalar("Training loss", train_mean_loss, global_step=train_step)
+        train_step += 1
 
-
-        # print(f"Currently epoch {epoch}")
-        # print("On Train Eval loader:")
-        # check_class_accuracy(model, train_eval_loader, threshold=config.CONF_THRESHOLD)
-        # print("On Train loader:")
-        # check_class_accuracy(model, train_loader, threshold=config.CONF_THRESHOLD)
 
         if (epoch+1) % 5 == 0:
             print("On Test loader:")
-            val_step = check_class_accuracy(model, loss_fn, test_loader, scaled_anchors, writer, val_step, threshold=config.CONF_THRESHOLD)
+            valid_mean_loss = check_class_accuracy(model, loss_fn, test_loader, scaled_anchors, threshold=config.CONF_THRESHOLD)
+            writer.add_scalar("validation loss", valid_mean_loss, global_step=val_step)
+            val_step += 1
+
 
             pred_boxes, true_boxes = get_evaluation_bboxes(
                 test_loader,
@@ -172,7 +169,7 @@ if __name__ == "__main__":
     parser.add_argument('--epochs', type=int, default=200, help='number of epochs')
     parser.add_argument('--pretrained-weight', type=str, default='darknet53_pretrained.pth.tar', help='pretrained weights file name')
     parser.add_argument('--backbone', type=str, default='darknet53', help='backbone network')
-
+    parser.add_argument('--load-model', action='store_true', help='load checkpoint')  # train시에 선언만 하면 True
     # parser.add_argument('--conf-threshold', type=float, default=0.6, help='')
     # parser.add_argument('--map-iou-threshold', type=float, default=0.5, help='')
     # parser.add_argument('--nms-iou-threshold', type=float, default=0.45, help=''
@@ -191,7 +188,6 @@ if __name__ == "__main__":
         config.NUM_EPOCHS = opt.epochs
 
 
-    seed_everything()
     torch.backends.cudnn.benchmark = True  # 32batch size에서 epoch당 약 6분 차이남
     '''
     내장된 cudnn 자동 튜너를 활성화하여, 하드웨어에 맞게 사용할 최상의 알고리즘(텐서 크기나 conv 연산에 맞게?)을 찾는다.
