@@ -28,7 +28,7 @@ def stuff():
 
 @app.route('/')
 def index():
-    return render_template('12_2.html')
+    return render_template('main_home.html')
 
 @app.route('/video')
 def video():
