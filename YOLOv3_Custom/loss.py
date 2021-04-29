@@ -31,15 +31,13 @@ class YOLOLoss(nn.Module):
         obj = target[..., 0] == 1
         noobj = target[..., 0] == 0
 
-
         # ======================= #
         #   FOR NO OBJECT LOSS    #
         # ======================= #
 
         no_object_loss = self.bce(
-            (predictions[..., 0:1][noobj]), (target[..., 0:1][noobj])  # target 이미지에 object가 없는 위치를 indexing
+            (predictions[..., 0:1][noobj]), (target[..., 0:1][noobj])  # target 이미지에 object가 없1는 위치를 indexing
         )
-
 
         # ==================== #
         #   FOR OBJECT LOSS    #
@@ -66,9 +64,9 @@ class YOLOLoss(nn.Module):
 
         # predictions[..., 3:5] = torch.exp(predictions[..., 3:5]) * anchors  # w,y
 
-        box_loss = self.mse(predictions[..., 1:5][obj], target[..., 1:5][obj])  # same dim
+        box_loss = self.mse(predictions[..., 1:5][obj], target[..., 1:5][obj])  # have to same dim
 
-        # iou = 1 - intersection_over_union(box_preds[obj], target[..., 1:5][obj])
+        # iou = 1 - intersection_over_union(predictions[..., 1:5][obj], target[..., 1:5][obj])
         # box_loss = iou.mean()
         # giou_loss = generalized_intersection_over_union(predictions[..., 1:5][obj], target[..., 1:5][obj])  # GIoU loss
         # box_loss = giou_loss
