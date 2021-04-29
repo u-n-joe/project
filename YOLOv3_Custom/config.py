@@ -11,9 +11,9 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 seed_everything()  # deterministic behavior
 NUM_WORKERS = 2  # colab
 BATCH_SIZE = 3
-# IMAGE_SIZE = 416  # 32씩 더하거나 줄여서 성능 평가 하기 384, 416, 448, 480, 512
+IMAGE_SIZE = 416  # 32씩 더하거나 줄여서 성능 평가 하기 384, 416, 448, 480, 512
 # IMAGE_SIZE = 448
-IMAGE_SIZE = 480
+# IMAGE_SIZE = 480
 # IMAGE_SIZE = 512
 
 
@@ -49,7 +49,7 @@ train_transforms = A.Compose(
             border_mode=cv2.BORDER_CONSTANT,
         ),
         A.RandomCrop(width=IMAGE_SIZE, height=IMAGE_SIZE),
-        A.RandomBrightnessContrast(p=0.2),  # new
+        # A.RandomBrightnessContrast(p=0.2),  # new
         # A.ColorJitter(brightness=0.6, contrast=0.6, saturation=0.6, hue=0.6, p=0.4),
         A.OneOf(
             [
